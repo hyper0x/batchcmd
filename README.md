@@ -1,7 +1,7 @@
 command-go
 ==========
 
-A Helper of execute system command 
+A Helper for executing system command.
 
 # Usage
 
