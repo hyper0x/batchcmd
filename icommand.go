@@ -18,7 +18,7 @@ var (
 func init() {
 	log.SetFlags(log.Lshortfile | log.LstdFlags)
 	flag.StringVar(&command, "c", "", "The command that will be executed.")
-	flag.StringVar(&parentDirs, "p", "", "The parent path of target directory. You maybe separate multiple path with comma ','.")
+	flag.StringVar(&parentDirs, "p", "", "The parent path of target directory. Note that multiple path needs to separated by commas ','.")
 }
 
 func checkBaseDir(basePath string) (targetPaths []string, err error) {
