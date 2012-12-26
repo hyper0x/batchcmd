@@ -11,8 +11,8 @@ A Helper of execute system command
 ```bash
 cd <repo_path>
 go run icommand.go -c=<command> 
-# I often use it with `-c="git pull"` for pulling the content in subdir from git repo. 
 ```
+I often use it with `-c="git pull"` for pulling the content in subdir from git repo. 
 
 3. Lisence:
 Copyright (C) 2012
