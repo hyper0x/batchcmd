@@ -6,23 +6,23 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
 	"strings"
 )
 
 var (
 	command    string
 	parentDirs string
+	isTest     bool
 )
 
 func init() {
 	log.SetFlags(log.Lshortfile | log.LstdFlags)
 	flag.StringVar(&command, "c", "", "The command that will be executed.")
 	flag.StringVar(&parentDirs, "p", "", "The parent path of target directory. Note that multiple path needs to separated by commas ','.")
+	flag.BoolVar(&isTest, "t", false, "Only test. (Do not execute the command)")
 }
 
 func checkBaseDir(basePath string) (targetPaths []string, err error) {
-	printSegmentLine()
 	log.Printf("Base Path: %s\n", basePath)
 	baseDir, err := os.Open(basePath)
 	if err != nil {
@@ -38,6 +38,11 @@ func checkBaseDir(basePath string) (targetPaths []string, err error) {
 		isTarget := false
 		fileInfo := v.(os.FileInfo)
 		subDirName := fileInfo.Name()
+		absSubDirName, err := filepath.Abs(subDirName)
+		if err != nil {
+			log.Printf("AbsError (%s): %s\n", absSubDirName, err)
+			return targetPaths, err
+		}
 		if fileInfo.IsDir() {
 			subDir, err := os.Open(subDirName)
 			if err != nil {
@@ -49,28 +54,23 @@ func checkBaseDir(basePath string) (targetPaths []string, err error) {
 				log.Println("ReaddirnamesError:", err)
 				return targetPaths, err
 			}
-			if sort.SearchStrings(names, ".git") >= 0 {
+			if len(names) == 0 {
+				log.Printf("Note that Ignore EMPTY directory '%s'.\n", absSubDirName)
+			} else {
 				isTarget = true
 			}
 		}
-		targetPath, err := filepath.Abs(subDirName)
-		if err != nil {
-			log.Printf("AbsError (%s): %s\n", targetPath, err)
-			return targetPaths, err
-		}
 		if isTarget {
-			log.Printf("Target: %s\n", targetPath)
-			targetPaths = append(targetPaths, targetPath)
+			log.Printf("Target: %s\n", absSubDirName)
+			targetPaths = append(targetPaths, absSubDirName)
 		} else {
-			log.Printf("Non-target: %s\n", targetPath)
+			log.Printf("Non-target: %s\n", absSubDirName)
 		}
 	}
-	printSegmentLine()
 	return targetPaths, err
 }
 
 func executeCommand(targetPath string, command string) error {
-	printSegmentLine()
 	log.Printf("Entry into target Path: %s\n", targetPath)
 	err := os.Chdir(targetPath)
 	if err != nil {
@@ -94,7 +94,6 @@ func executeCommand(targetPath string, command string) error {
 		return err
 	}
 	log.Printf("Output (dir=%s, cmd=%s, agrs=%v): \n%v\n", targetPath, realCmd, args, string(result))
-	printSegmentLine()
 	return nil
 }
 
@@ -104,9 +103,13 @@ func printSegmentLine() {
 
 func main() {
 	flag.Parse()
-	log.Printf("Command: %s\n", command)
+	if isTest {
+		log.Println("Starting... (in test enviroment)")
+	} else {
+		log.Println("Starting... (in formal enviroment)")
+	}
 	if len(command) == 0 {
-		log.Println("The argument '-command' is NOT specified!")
+		log.Println("The argument '-c' is NOT specified!")
 		return
 	}
 	basePaths := make([]string, 0)
@@ -120,10 +123,10 @@ func main() {
 		}
 		basePaths = append(basePaths, defaultBasePath)
 	}
-	log.Printf("Parameters: \n  Command: %s\n  Base paths: %s", command, basePaths)
-	printSegmentLine()
+	log.Printf("Parameters: \n  Command: %s\n  Base paths: %s\n  Test: %v\n", command, basePaths, isTest)
 	targetPaths := make([]string, 0)
 	for _, basePath := range basePaths {
+		printSegmentLine()
 		subTargetPaths, err := checkBaseDir(basePath)
 		if err != nil {
 			log.Println("CheckBaseDirError:", err)
@@ -131,9 +134,12 @@ func main() {
 		}
 		targetPaths = append(targetPaths, subTargetPaths...)
 	}
-	for _, targetPath := range targetPaths {
-		executeCommand(targetPath, command)
+	if !isTest {
+		for _, targetPath := range targetPaths {
+			printSegmentLine()
+			executeCommand(targetPath, command)
+		}
+		printSegmentLine()
+		log.Println("The command(s) execution has been finished.")
 	}
-	printSegmentLine()
-	log.Println("The command(s) execution has been finished.")
 }
