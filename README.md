@@ -1,4 +1,4 @@
-command-go
+go-command
 ==========
 
 A Helper for executing system command.
@@ -16,5 +16,4 @@ I often use it with `-c="git pull"` for pulling the content in subdir from git r
 
 3. Lisence:
 Copyright (C) 2012
-
 Distributed under the BSD-style license, the same as Go.
