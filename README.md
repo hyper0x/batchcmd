@@ -14,6 +14,6 @@ go run icommand.go -c=<command>
 ```
 I often use it with `-c="git pull"` for pulling the content in subdir from git repo. 
 
-3. Lisence:
+# Lisence:
 Copyright (C) 2013
 Distributed under the BSD-style license, the same as Go.
