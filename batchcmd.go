@@ -7,11 +7,13 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 )
 
 var (
 	command    string
 	parentDirs string
+	depth      int
 	isTest     bool
 )
 
@@ -19,55 +21,85 @@ func init() {
 	log.SetFlags(log.Lshortfile | log.LstdFlags)
 	flag.StringVar(&command, "c", "", "The command that will be executed.")
 	flag.StringVar(&parentDirs, "p", "", "The parent path of target directory. Note that multiple path needs to separated by commas ','.")
+	flag.IntVar(&depth, "d", 1, "The max depth  of target directory. ")
 	flag.BoolVar(&isTest, "t", false, "Only test. (Do not execute the command)")
 }
 
-func checkBaseDir(basePath string) (targetPaths []string, err error) {
-	log.Printf("Base Path: %s\n", basePath)
-	baseDir, err := os.Open(basePath)
-	if err != nil {
-		log.Printf("OpenBaseDirError (%s): %s\n", baseDir, err)
-		return nil, err
+func findAllSubDirs(filePath string, depth int, ch chan<- string) error {
+	if depth < 0 {
+		return nil
 	}
-	subDirs, err := baseDir.Readdir(-1)
+	file, err := os.Open(filePath)
 	if err != nil {
-		log.Println("ReaddirError:", err)
-		return nil, err
+		log.Printf("OpenError (%s): %s\n", filePath, err)
+		return err
 	}
-	for _, v := range subDirs {
-		isTarget := false
-		fileInfo := v.(os.FileInfo)
-		subDirName := fileInfo.Name()
-		absSubDirName, err := filepath.Abs(subDirName)
+	fileInfo, err := file.Stat()
+	if err != nil {
+		log.Printf("StatError (%s): %s\n", filePath, err)
+		return err
+	}
+	if !fileInfo.IsDir() {
+		log.Printf("Non-target: %s\n", filePath)
+		return nil
+	}
+	subPaths, err := file.Readdirnames(-1)
+	if err != nil {
+		log.Printf("ReaddirnamesError(%s): %s\n", filePath, err)
+		return err
+	}
+	if len(subPaths) == 0 {
+		log.Printf("Note that Ignore EMPTY directory '%s'.\n", filePath)
+		return nil
+	}
+	log.Printf("Target: %s\n", filePath)
+	ch <- filePath
+	if depth == 0 {
+		return nil
+	}
+	newDepth := depth - 1
+	for _, subPath := range subPaths {
+		if strings.HasPrefix(subPath, ".") {
+			continue
+		}
+		absSubPath := filepath.Join(filePath, subPath)
+		err := findAllSubDirs(absSubPath, newDepth, ch)
 		if err != nil {
-			log.Printf("AbsError (%s): %s\n", absSubDirName, err)
-			return targetPaths, err
-		}
-		if fileInfo.IsDir() {
-			subDir, err := os.Open(subDirName)
-			if err != nil {
-				log.Println("OpenSubDirError:", err)
-				return targetPaths, err
-			}
-			names, err := subDir.Readdirnames(-1)
-			if err != nil {
-				log.Println("ReaddirnamesError:", err)
-				return targetPaths, err
-			}
-			if len(names) == 0 {
-				log.Printf("Note that Ignore EMPTY directory '%s'.\n", absSubDirName)
-			} else {
-				isTarget = true
-			}
-		}
-		if isTarget {
-			log.Printf("Target: %s\n", absSubDirName)
-			targetPaths = append(targetPaths, absSubDirName)
-		} else {
-			log.Printf("Non-target: %s\n", absSubDirName)
+			return err
 		}
 	}
-	return targetPaths, err
+	return nil
+}
+
+func findAllTargetDirs(basePaths []string, depth int, pathCh chan<- string) {
+	var wg sync.WaitGroup
+	var err error
+	for _, basePath := range basePaths {
+		log.Printf("Base Path: %s\n", basePath)
+		var absBasePath string
+		if filepath.IsAbs(basePath) {
+			absBasePath = basePath
+		} else {
+			absBasePath, err = filepath.Abs(basePath)
+			if err != nil {
+				log.Printf("AbsBasePathError (%s): %s\n", basePath, err)
+				close(pathCh)
+				break
+			}
+		}
+
+		go func() {
+			wg.Add(1)
+			defer func() {
+				close(pathCh)
+				wg.Done()
+			}()
+			err := findAllSubDirs(absBasePath, depth, pathCh)
+			if err != nil {
+				log.Printf("FindAllDirsError (%s): %s\n", absBasePath, err)
+			}
+		}()
+	}
 }
 
 func executeCommand(targetPath string, command string) error {
@@ -112,7 +144,7 @@ func main() {
 		log.Println("The argument '-c' is NOT specified!")
 		return
 	}
-	basePaths := make([]string, 0)
+	var basePaths []string
 	if len(parentDirs) > 0 {
 		basePaths = strings.Split(parentDirs, ",")
 	} else {
@@ -121,25 +153,18 @@ func main() {
 			log.Println("GetwdError:", err)
 			return
 		}
-		basePaths = append(basePaths, defaultBasePath)
+		basePaths = []string{defaultBasePath}
 	}
-	log.Printf("Parameters: \n  Command: %s\n  Base paths: %s\n  Test: %v\n", command, basePaths, isTest)
-	targetPaths := make([]string, 0)
-	for _, basePath := range basePaths {
-		printSegmentLine()
-		subTargetPaths, err := checkBaseDir(basePath)
-		if err != nil {
-			log.Println("CheckBaseDirError:", err)
-			return
-		}
-		targetPaths = append(targetPaths, subTargetPaths...)
-	}
-	if !isTest {
-		for _, targetPath := range targetPaths {
+	log.Printf("Parameters: \n  Command: %s\n  Base paths: %s\n  Depth: %d Test: %v\n", command, basePaths, depth, isTest)
+
+	pathCh := make(chan string, 5)
+	findAllTargetDirs(basePaths, depth, pathCh)
+	for targetPath := range pathCh {
+		if !isTest {
 			printSegmentLine()
 			executeCommand(targetPath, command)
 		}
-		printSegmentLine()
-		log.Println("The command(s) execution has been finished.")
 	}
+	printSegmentLine()
+	log.Println("The command(s) execution has been finished.")
 }
