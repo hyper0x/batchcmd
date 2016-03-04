@@ -11,7 +11,7 @@ A Helper for executing system command.
 ```bash
 batchcmd -c=<command> 
 ```
-I often use it with `-c="git pull"` for pulling the content in subdir from git repo. 
+I often use it with `-c="git pull"` for pulling the updated content from git repo. 
 
 # Lisence:
 Copyright (C) 2013
