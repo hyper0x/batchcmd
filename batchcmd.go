@@ -1,13 +1,21 @@
 package main
 
 import (
+	"bytes"
 	"flag"
+	"fmt"
 	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
+	"sort"
 	"strings"
 	"sync"
+)
+
+const (
+	separator = "------------------------------------------------------------"
 )
 
 var (
@@ -25,6 +33,7 @@ func init() {
 	flag.BoolVar(&isTest, "t", false, "Only test. (Do not execute the command)")
 }
 
+// findAllSubDirs find all of sub dirs of specified path base on depth-first.
 func findAllSubDirs(filePath string, depth int, ch chan<- string) error {
 	if depth < 0 {
 		return nil
@@ -52,7 +61,6 @@ func findAllSubDirs(filePath string, depth int, ch chan<- string) error {
 		log.Printf("Note that Ignore EMPTY directory '%s'.\n", filePath)
 		return nil
 	}
-	log.Printf("Target: %s\n", filePath)
 	ch <- filePath
 	if depth == 0 {
 		return nil
@@ -71,6 +79,7 @@ func findAllSubDirs(filePath string, depth int, ch chan<- string) error {
 	return nil
 }
 
+// findAllTargetDirs check all of base paths, and find their sub dirs concurrently.
 func findAllTargetDirs(basePaths []string, depth int, pathCh chan<- string) {
 	var wg sync.WaitGroup
 	var err error
@@ -87,11 +96,9 @@ func findAllTargetDirs(basePaths []string, depth int, pathCh chan<- string) {
 				break
 			}
 		}
-
+		wg.Add(1)
 		go func() {
-			wg.Add(1)
 			defer func() {
-				close(pathCh)
 				wg.Done()
 			}()
 			err := findAllSubDirs(absBasePath, depth, pathCh)
@@ -100,21 +107,30 @@ func findAllTargetDirs(basePaths []string, depth int, pathCh chan<- string) {
 			}
 		}()
 	}
+	go func() {
+		wg.Wait()
+		close(pathCh)
+	}()
 }
 
-func executeCommand(targetPath string, command string) error {
-	log.Printf("Entry into target Path: %s\n", targetPath)
-	err := os.Chdir(targetPath)
+func executeCommand(targetPath string, command string) (logContent string, err error) {
+	logBuffer := new(bytes.Buffer)
+	defer func() {
+		logContent = logBuffer.String()
+	}()
+	bufferLog(logBuffer, separator)
+	bufferLog(logBuffer, "\nEntry into target Path: %s\n", targetPath)
+	err = os.Chdir(targetPath)
 	if err != nil {
-		log.Printf("ChdirError (%s): %s\n", targetPath, err)
-		return err
+		bufferLog(logBuffer, "ChdirError (%s): %s\n", targetPath, err)
+		return "", err
 	}
 	cmdWithArgs := strings.Split(command, " ")
 	var cmd *exec.Cmd
 	cmdLength := len(cmdWithArgs)
 	realCmd := cmdWithArgs[0]
 	args := cmdWithArgs[1:cmdLength]
-	log.Printf("Execute command (cmd=%s, args=%s)...\n", realCmd, args)
+	bufferLog(logBuffer, "Execute command (cmd=%s, args=%s)...\n", realCmd, args)
 	if cmdLength > 1 {
 		cmd = exec.Command(realCmd, args...)
 	} else {
@@ -122,15 +138,15 @@ func executeCommand(targetPath string, command string) error {
 	}
 	result, err := cmd.Output()
 	if err != nil {
-		log.Printf("CmdRunError (cmd=%s, args=%v): %s\n", realCmd, args, err)
-		return err
+		bufferLog(logBuffer, "CmdRunError (cmd=%s, args=%v): %s\n", realCmd, args, err)
+		return "", err
 	}
-	log.Printf("Output (dir=%s, cmd=%s, agrs=%v): \n%v\n", targetPath, realCmd, args, string(result))
-	return nil
+	bufferLog(logBuffer, "Output: %v\n", string(result))
+	return "", nil
 }
 
-func printSegmentLine() {
-	log.Println("------------------------------------------------------------")
+func bufferLog(buffer *bytes.Buffer, template string, args ...interface{}) {
+	buffer.WriteString(fmt.Sprintf(template, args...))
 }
 
 func main() {
@@ -155,16 +171,39 @@ func main() {
 		}
 		basePaths = []string{defaultBasePath}
 	}
-	log.Printf("Parameters: \n  Command: %s\n  Base paths: %s\n  Depth: %d\n Test: %v\n", command, basePaths, depth, isTest)
+	log.Printf("Parameters: \n  Command: %s\n  Base paths: %s\n  Depth: %d\n  Test: %v\n", command, basePaths, depth, isTest)
 
 	pathCh := make(chan string, 5)
 	findAllTargetDirs(basePaths, depth, pathCh)
-	for targetPath := range pathCh {
-		if !isTest {
-			printSegmentLine()
-			executeCommand(targetPath, command)
+
+	if isTest {
+		var targetPaths []string
+		for targetPath := range pathCh {
+			targetPaths = append(targetPaths, targetPath)
+		}
+		sort.Strings(targetPaths)
+		for _, targetPath := range targetPaths {
+			log.Printf("Target path: %s\n", targetPath)
+		}
+		log.Println(separator)
+		log.Println("The command(s) has been ignored in test mode.")
+		return
+	}
+
+	var wg sync.WaitGroup
+	exec := func() {
+		defer wg.Done()
+		for targetPath := range pathCh {
+			logContent, _ := executeCommand(targetPath, command)
+			log.Println(logContent)
 		}
 	}
-	printSegmentLine()
+	pNum := runtime.NumCPU()
+	for i := 0; i < pNum; i++ {
+		wg.Add(1)
+		go exec()
+	}
+	wg.Wait()
+	log.Println(separator)
 	log.Println("The command(s) execution has been finished.")
 }
