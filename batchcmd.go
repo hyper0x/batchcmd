@@ -155,7 +155,7 @@ func main() {
 		}
 		basePaths = []string{defaultBasePath}
 	}
-	log.Printf("Parameters: \n  Command: %s\n  Base paths: %s\n  Depth: %d Test: %v\n", command, basePaths, depth, isTest)
+	log.Printf("Parameters: \n  Command: %s\n  Base paths: %s\n  Depth: %d\n Test: %v\n", command, basePaths, depth, isTest)
 
 	pathCh := make(chan string, 5)
 	findAllTargetDirs(basePaths, depth, pathCh)
