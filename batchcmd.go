@@ -186,7 +186,7 @@ func main() {
 			log.Printf("Target path: %s\n", targetPath)
 		}
 		log.Println(separator)
-		log.Println("The command(s) has been ignored in test mode.")
+		log.Println("The command(s) have been ignored in test mode.")
 		return
 	}
 
