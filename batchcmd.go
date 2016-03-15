@@ -49,7 +49,6 @@ func findAllSubDirs(filePath string, depth int, ch chan<- string) error {
 		return err
 	}
 	if !fileInfo.IsDir() {
-		log.Printf("Non-target: %s\n", filePath)
 		return nil
 	}
 	subPaths, err := file.Readdirnames(-1)
@@ -58,7 +57,7 @@ func findAllSubDirs(filePath string, depth int, ch chan<- string) error {
 		return err
 	}
 	if len(subPaths) == 0 {
-		log.Printf("Note that Ignore EMPTY directory '%s'.\n", filePath)
+		log.Printf("Ignore EMPTY directory '%s'.\n", filePath)
 		return nil
 	}
 	ch <- filePath
