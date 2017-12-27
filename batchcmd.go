@@ -230,11 +230,12 @@ func main() {
 		log.Printf("Target Dir: %s\n", key)
 		errorCount := 0
 		for index, one := range list.GetAll() {
-			log.Printf("  %d. %s\n\n", index+1, one.String())
+			log.Printf("  %d. %s\n", index+1, one.String())
 			if one.Level() >= loghelper.LEVEL_ERROR {
 				errorCount++
 			}
 		}
+		log.Println("")
 		var summary string
 		if errorCount > 0 {
 			summary = fmt.Sprintf("%s: failure(%d).", key, errorCount)
