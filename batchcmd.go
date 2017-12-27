@@ -73,7 +73,9 @@ func findAllSubDirs(filePath string, isParentDir bool, depth int, pathCh chan<- 
 		return fmt.Errorf("read subdir name: %s", err)
 	}
 	if len(subPaths) == 0 {
-		appendLog(filePath, loghelper.LEVEL_DEBUG, "ignore empty dir.")
+		one := loghelper.NewOne(loghelper.LEVEL_WARN,
+			fmt.Sprintf("ignore empty dir '%s'.", filePath))
+		log.Println(one)
 		return nil
 	}
 	if !isParentDir {
@@ -100,15 +102,17 @@ func findAllSubDirs(filePath string, isParentDir bool, depth int, pathCh chan<- 
 func findAllTargetDirs(parentDirs []string, depth int, dirCh chan<- string) {
 	var absParentDirs []string
 	for _, parentDir := range parentDirs {
-		appendLog(parentDir, loghelper.LEVEL_DEBUG, "check parent dir.")
+		one := loghelper.NewOne(loghelper.LEVEL_INFO,
+			fmt.Sprintf("check parent dir '%s'.", parentDir))
+		log.Println(one)
 		if filepath.IsAbs(parentDir) {
 			absParentDirs = append(absParentDirs, parentDir)
 		} else {
 			absParentDir, err := filepath.Abs(parentDir)
 			if err != nil {
-				appendLog(parentDir,
-					loghelper.LEVEL_ERROR,
-					fmt.Sprintf("abs parent dir: %s", err))
+				one := loghelper.NewOne(loghelper.LEVEL_ERROR,
+					fmt.Sprintf("abs parent dir '%s': %s", parentDir, err))
+				log.Println(one)
 				continue
 			}
 			absParentDirs = append(absParentDirs, absParentDir)
@@ -117,17 +121,17 @@ func findAllTargetDirs(parentDirs []string, depth int, dirCh chan<- string) {
 	var wg sync.WaitGroup
 	wg.Add(len(absParentDirs))
 	for _, absParentDir := range absParentDirs {
-		go func() {
+		go func(dir string) {
 			defer func() {
 				wg.Done()
 			}()
-			err := findAllSubDirs(absParentDir, true, depth, dirCh)
+			err := findAllSubDirs(dir, true, depth, dirCh)
 			if err != nil {
-				appendLog(absParentDir,
+				appendLog(dir,
 					loghelper.LEVEL_ERROR,
 					fmt.Sprintf("find all subdirs: %s", err))
 			}
-		}()
+		}(absParentDir)
 	}
 	go func() {
 		wg.Wait()
@@ -194,7 +198,7 @@ func main() {
 		command, allParentDirs, depth, isTest)
 	log.Println("")
 
-	dirCh := make(chan string, 5)
+	dirCh := make(chan string, 50)
 	findAllTargetDirs(allParentDirs, depth, dirCh)
 
 	if isTest {
@@ -202,10 +206,14 @@ func main() {
 		for targetDir := range dirCh {
 			targetDirs = append(targetDirs, targetDir)
 		}
+		log.Println("")
+		log.Println(separator)
 		sort.Strings(targetDirs)
-		for _, targetDir := range targetDirs {
-			log.Printf("Target dir: %s\n", targetDir)
+		log.Printf("Target dirs(%d): \n", len(targetDirs))
+		for i, targetDir := range targetDirs {
+			log.Printf("  %d. %s\n", i+1, targetDir)
 		}
+		log.Println("")
 		log.Println(separator)
 		log.Println("The command(s) execution has been ignored in test mode.")
 		return
@@ -226,6 +234,7 @@ func main() {
 	wg.Wait()
 	var summaries []string
 	logMap.Range(func(key string, list loghelper.List) bool {
+		log.Println("")
 		log.Println(separator)
 		log.Printf("Target Dir: %s\n", key)
 		errorCount := 0
@@ -235,7 +244,6 @@ func main() {
 				errorCount++
 			}
 		}
-		log.Println("")
 		var summary string
 		if errorCount > 0 {
 			summary = fmt.Sprintf("%s: failure(%d).", key, errorCount)
@@ -245,6 +253,7 @@ func main() {
 		summaries = append(summaries, summary)
 		return true
 	})
+	log.Println("")
 	log.Println(separator)
 	log.Println("Summary: ")
 	for i, s := range summaries {
