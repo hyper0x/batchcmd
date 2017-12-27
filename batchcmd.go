@@ -175,9 +175,9 @@ func executeCommand(targetDir string, command string) {
 func main() {
 	flag.Parse()
 	if isTest {
-		log.Println("Starting... (in test enviroment)")
+		log.Println("Starting... (in test environment)")
 	} else {
-		log.Println("Starting... (in formal enviroment)")
+		log.Println("Starting... (in formal environment)")
 	}
 	if len(command) == 0 {
 		log.Println("The argument '-c' is NOT specified!")
