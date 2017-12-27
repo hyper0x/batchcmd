@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"flag"
 	"fmt"
 	"log"
@@ -12,55 +11,74 @@ import (
 	"sort"
 	"strings"
 	"sync"
+
+	loghelper "github.com/hyper0x/batchcmd/helper/log"
 )
 
 const (
 	separator = "------------------------------------------------------------"
 )
 
+// logMap 代表日志字典。
+var logMap = loghelper.NewMap()
+
+// appendLog 用于追加日志。
+func appendLog(path string, level loghelper.Level, content string) {
+	if !verboseLog && level < loghelper.LEVEL_INFO {
+		return
+	}
+	oneLog := loghelper.NewOne(level, content)
+	logMap.Append(path, oneLog)
+}
+
 var (
 	command    string
 	parentDirs string
 	depth      int
 	isTest     bool
+	verboseLog bool
 )
 
 func init() {
-	log.SetFlags(log.Lshortfile | log.LstdFlags)
 	flag.StringVar(&command, "c", "", "The command that will be executed.")
 	flag.StringVar(&parentDirs, "p", "", "The parent path of target directory. Note that multiple path needs to separated by commas ','.")
 	flag.IntVar(&depth, "d", 1, "The max depth  of target directory. ")
 	flag.BoolVar(&isTest, "t", false, "Only test. (Do not execute the command)")
+	flag.BoolVar(&verboseLog, "v", false, "Print verbose log.")
+	if verboseLog {
+		log.SetFlags(log.LstdFlags)
+	} else {
+		log.SetFlags(0)
+	}
 }
 
 // findAllSubDirs find all of sub dirs of specified path base on depth-first.
-func findAllSubDirs(filePath string, depth int, ch chan<- string) error {
+func findAllSubDirs(filePath string, isParentDir bool, depth int, pathCh chan<- string) error {
 	if depth < 0 {
 		return nil
 	}
 	file, err := os.Open(filePath)
 	if err != nil {
-		log.Printf("OpenError (%s): %s\n", filePath, err)
-		return err
+		return fmt.Errorf("open file: %s", err)
 	}
 	fileInfo, err := file.Stat()
 	if err != nil {
-		log.Printf("StatError (%s): %s\n", filePath, err)
-		return err
+		return fmt.Errorf("get file stat: %s", err)
 	}
 	if !fileInfo.IsDir() {
 		return nil
 	}
 	subPaths, err := file.Readdirnames(-1)
 	if err != nil {
-		log.Printf("ReaddirnamesError(%s): %s\n", filePath, err)
-		return err
+		return fmt.Errorf("read subdir name: %s", err)
 	}
 	if len(subPaths) == 0 {
-		log.Printf("Ignore EMPTY directory '%s'.\n", filePath)
+		appendLog(filePath, loghelper.LEVEL_DEBUG, "ignore empty dir.")
 		return nil
 	}
-	ch <- filePath
+	if !isParentDir {
+		pathCh <- filePath
+	}
 	if depth == 0 {
 		return nil
 	}
@@ -70,7 +88,7 @@ func findAllSubDirs(filePath string, depth int, ch chan<- string) error {
 			continue
 		}
 		absSubPath := filepath.Join(filePath, subPath)
-		err := findAllSubDirs(absSubPath, newDepth, ch)
+		err := findAllSubDirs(absSubPath, false, newDepth, pathCh)
 		if err != nil {
 			return err
 		}
@@ -78,58 +96,61 @@ func findAllSubDirs(filePath string, depth int, ch chan<- string) error {
 	return nil
 }
 
-// findAllTargetDirs check all of base paths, and find their sub dirs concurrently.
-func findAllTargetDirs(basePaths []string, depth int, pathCh chan<- string) {
-	var wg sync.WaitGroup
-	var err error
-	for _, basePath := range basePaths {
-		log.Printf("Base Path: %s\n", basePath)
-		var absBasePath string
-		if filepath.IsAbs(basePath) {
-			absBasePath = basePath
+// findAllTargetDirs check all of parent dirs, and find their sub dirs concurrently.
+func findAllTargetDirs(parentDirs []string, depth int, dirCh chan<- string) {
+	var absParentDirs []string
+	for _, parentDir := range parentDirs {
+		appendLog(parentDir, loghelper.LEVEL_DEBUG, "check parent dir.")
+		if filepath.IsAbs(parentDir) {
+			absParentDirs = append(absParentDirs, parentDir)
 		} else {
-			absBasePath, err = filepath.Abs(basePath)
+			absParentDir, err := filepath.Abs(parentDir)
 			if err != nil {
-				log.Printf("AbsBasePathError (%s): %s\n", basePath, err)
-				close(pathCh)
-				break
+				appendLog(parentDir,
+					loghelper.LEVEL_ERROR,
+					fmt.Sprintf("abs parent dir: %s", err))
+				continue
 			}
+			absParentDirs = append(absParentDirs, absParentDir)
 		}
-		wg.Add(1)
+	}
+	var wg sync.WaitGroup
+	wg.Add(len(absParentDirs))
+	for _, absParentDir := range absParentDirs {
 		go func() {
 			defer func() {
 				wg.Done()
 			}()
-			err := findAllSubDirs(absBasePath, depth, pathCh)
+			err := findAllSubDirs(absParentDir, true, depth, dirCh)
 			if err != nil {
-				log.Printf("FindAllDirsError (%s): %s\n", absBasePath, err)
+				appendLog(absParentDir,
+					loghelper.LEVEL_ERROR,
+					fmt.Sprintf("find all subdirs: %s", err))
 			}
 		}()
 	}
 	go func() {
 		wg.Wait()
-		close(pathCh)
+		close(dirCh)
 	}()
 }
 
-func executeCommand(targetPath string, command string) (logContent string, err error) {
-	logBuffer := new(bytes.Buffer)
-	defer func() {
-		logContent = logBuffer.String()
-	}()
-	bufferLog(logBuffer, separator)
-	bufferLog(logBuffer, "\nEntry into target Path: %s\n", targetPath)
-	err = os.Chdir(targetPath)
+func executeCommand(targetDir string, command string) {
+	appendLog(targetDir, loghelper.LEVEL_DEBUG, "entry into target dir.")
+	err := os.Chdir(targetDir)
 	if err != nil {
-		bufferLog(logBuffer, "ChdirError (%s): %s\n", targetPath, err)
-		return "", err
+		appendLog(targetDir,
+			loghelper.LEVEL_ERROR,
+			fmt.Sprintf("change dir: %s", err))
+		return
 	}
 	cmdWithArgs := strings.Split(command, " ")
 	var cmd *exec.Cmd
 	cmdLength := len(cmdWithArgs)
 	realCmd := cmdWithArgs[0]
 	args := cmdWithArgs[1:cmdLength]
-	bufferLog(logBuffer, "Execute command (cmd=%s, args=%s)...\n", realCmd, args)
+	appendLog(targetDir, loghelper.LEVEL_DEBUG,
+		fmt.Sprintf("execute command '%s'.", command))
 	if cmdLength > 1 {
 		cmd = exec.Command(realCmd, args...)
 	} else {
@@ -137,15 +158,14 @@ func executeCommand(targetPath string, command string) (logContent string, err e
 	}
 	result, err := cmd.Output()
 	if err != nil {
-		bufferLog(logBuffer, "CmdRunError (cmd=%s, args=%v): %s\n", realCmd, args, err)
-		return "", err
+		appendLog(targetDir,
+			loghelper.LEVEL_ERROR,
+			fmt.Sprintf("run command '%s': %s", command, err))
+		return
 	}
-	bufferLog(logBuffer, "Output: %v\n", string(result))
-	return "", nil
-}
-
-func bufferLog(buffer *bytes.Buffer, template string, args ...interface{}) {
-	buffer.WriteString(fmt.Sprintf(template, args...))
+	appendLog(targetDir, loghelper.LEVEL_INFO,
+		fmt.Sprintf("output: \n%s", string(result)))
+	return
 }
 
 func main() {
@@ -159,50 +179,77 @@ func main() {
 		log.Println("The argument '-c' is NOT specified!")
 		return
 	}
-	var basePaths []string
+	var allParentDirs []string
 	if len(parentDirs) > 0 {
-		basePaths = strings.Split(parentDirs, ",")
+		allParentDirs = strings.Split(parentDirs, ",")
 	} else {
-		defaultBasePath, err := os.Getwd()
+		defaultParentDir, err := os.Getwd()
 		if err != nil {
-			log.Println("GetwdError:", err)
+			log.Println("Work Dir Getting Error:", err)
 			return
 		}
-		basePaths = []string{defaultBasePath}
+		allParentDirs = []string{defaultParentDir}
 	}
-	log.Printf("Parameters: \n  Command: %s\n  Base paths: %s\n  Depth: %d\n  Test: %v\n", command, basePaths, depth, isTest)
+	log.Printf("Parameters: \n  Command: %s\n  Parent Dirs: %s\n  Depth: %d\n  Test: %v\n",
+		command, allParentDirs, depth, isTest)
+	log.Println("")
 
-	pathCh := make(chan string, 5)
-	findAllTargetDirs(basePaths, depth, pathCh)
+	dirCh := make(chan string, 5)
+	findAllTargetDirs(allParentDirs, depth, dirCh)
 
 	if isTest {
-		var targetPaths []string
-		for targetPath := range pathCh {
-			targetPaths = append(targetPaths, targetPath)
+		var targetDirs []string
+		for targetDir := range dirCh {
+			targetDirs = append(targetDirs, targetDir)
 		}
-		sort.Strings(targetPaths)
-		for _, targetPath := range targetPaths {
-			log.Printf("Target path: %s\n", targetPath)
+		sort.Strings(targetDirs)
+		for _, targetDir := range targetDirs {
+			log.Printf("Target dir: %s\n", targetDir)
 		}
 		log.Println(separator)
 		log.Println("The command(s) execution has been ignored in test mode.")
 		return
 	}
 
-	var wg sync.WaitGroup
-	exec := func() {
+	workFunc := func(wg *sync.WaitGroup) {
 		defer wg.Done()
-		for targetPath := range pathCh {
-			logContent, _ := executeCommand(targetPath, command)
-			log.Println(logContent)
+		for targetDir := range dirCh {
+			executeCommand(targetDir, command)
 		}
 	}
 	pNum := runtime.NumCPU()
+	var wg sync.WaitGroup
+	wg.Add(pNum)
 	for i := 0; i < pNum; i++ {
-		wg.Add(1)
-		go exec()
+		go workFunc(&wg)
 	}
 	wg.Wait()
+	var summaries []string
+	logMap.Range(func(key string, list loghelper.List) bool {
+		log.Println(separator)
+		log.Printf("Target Dir: %s\n", key)
+		errorCount := 0
+		for index, one := range list.GetAll() {
+			log.Printf("  %d. %s\n\n", index+1, one.String())
+			if one.Level() >= loghelper.LEVEL_ERROR {
+				errorCount++
+			}
+		}
+		var summary string
+		if errorCount > 0 {
+			summary = fmt.Sprintf("%s: failure(%d).", key, errorCount)
+		} else {
+			summary = fmt.Sprintf("%s: success.", key)
+		}
+		summaries = append(summaries, summary)
+		return true
+	})
+	log.Println(separator)
+	log.Println("Summary: ")
+	for i, s := range summaries {
+		log.Printf("  %d. %s\n", i+1, s)
+	}
+	log.Println("")
 	log.Println(separator)
 	log.Println("The command(s) execution has been finished.")
 }
