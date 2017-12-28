@@ -40,11 +40,17 @@ var (
 )
 
 func init() {
-	flag.StringVar(&command, "c", "", "The command that will be executed.")
-	flag.StringVar(&parentDirs, "p", "", "The parent path of target directory. Note that multiple path needs to separated by commas ','.")
-	flag.IntVar(&depth, "d", 1, "The max depth  of target directory. ")
-	flag.BoolVar(&isTest, "t", false, "Only test. (Do not execute the command)")
-	flag.BoolVar(&verboseLog, "v", false, "Print verbose log.")
+	flag.StringVar(&command, "c", "",
+		"The command you want to execute")
+	flag.StringVar(&parentDirs, "p", "",
+		"The parent path of target directory(the command will be executed there). \n"+
+			"Note that multiple path needs to separated by commas ','.")
+	flag.IntVar(&depth, "d", 1,
+		"The max search depth for the target directory in parent path(s). ")
+	flag.BoolVar(&isTest, "t", false,
+		"Only test. (the command will not be executed)")
+	flag.BoolVar(&verboseLog, "v", false,
+		"Print the verbose logs.")
 	if verboseLog {
 		log.SetFlags(log.LstdFlags)
 	} else {
@@ -206,14 +212,12 @@ func main() {
 		for targetDir := range dirCh {
 			targetDirs = append(targetDirs, targetDir)
 		}
-		log.Println("")
 		log.Println(separator)
 		sort.Strings(targetDirs)
 		log.Printf("Target dirs(%d): \n", len(targetDirs))
 		for i, targetDir := range targetDirs {
 			log.Printf("  %d. %s\n", i+1, targetDir)
 		}
-		log.Println("")
 		log.Println(separator)
 		log.Println("The command(s) execution has been ignored in test mode.")
 		return
@@ -234,7 +238,6 @@ func main() {
 	wg.Wait()
 	var summaries []string
 	logMap.Range(func(key string, list loghelper.List) bool {
-		log.Println("")
 		log.Println(separator)
 		log.Printf("Target Dir: %s\n", key)
 		errorCount := 0
@@ -253,13 +256,11 @@ func main() {
 		summaries = append(summaries, summary)
 		return true
 	})
-	log.Println("")
 	log.Println(separator)
 	log.Println("Summary: ")
 	for i, s := range summaries {
 		log.Printf("  %d. %s\n", i+1, s)
 	}
-	log.Println("")
 	log.Println(separator)
 	log.Println("The command(s) execution has been finished.")
 }
