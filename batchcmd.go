@@ -19,10 +19,10 @@ const (
 	separator = "------------------------------------------------------------"
 )
 
-// logMap 代表日志字典。
+// logMap represents the log dictionary.
 var logMap = loghelper.NewMap()
 
-// appendLog 用于追加日志。
+// appendLog is used to append the log.
 func appendLog(path string, level loghelper.Level, content string) {
 	if !verboseLog && level < loghelper.LEVEL_INFO {
 		return

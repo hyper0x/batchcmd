@@ -5,16 +5,21 @@ import (
 	"sync"
 )
 
-// Map 代表以目录路径区分的日志的容器。
+// Map represents a container for logs that
+// are distinguished by directory paths.
 type Map interface {
-	// Append 会对指定的目录路径的日志列表中追加一条日志。
+	// Append appends a log to the log list of
+	// the specified directory path.
 	Append(key string, one One) (newKey, ok bool)
-	// Get 会查找并返回指定的目录路径的所有日志。
+	// Get finds and returns all logs of the specified
+	// directory path.
 	Get(key string) (list List, ok bool)
-	// Delete 会删除指定目录路径及对应的日志。
+	// Delete deletes the specified directory path and
+	// its corresponding logs.
 	Delete(key string)
-	// Range 会遍历目录路径及对应的日志并调用参数 f。
-	// 若在遍历时 f 返回了 false 则会停止遍历。
+	// The Range traverses the directory path and the corresponding log,
+	// and call the parameter f.
+	// If f returns false, then it will stop traversing.
 	Range(f func(key string, list List) bool)
 }
 
@@ -22,7 +27,7 @@ type sortedMap struct {
 	sm sync.Map
 }
 
-// NewMap 会创建一个日志字典实例。
+// NewMap creates a log dictionary instance.
 func NewMap() Map {
 	return &sortedMap{}
 }

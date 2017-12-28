@@ -2,13 +2,13 @@ package log
 
 import "fmt"
 
-// One 代表一条日志。
+// One represents single log interface.
 type One interface {
-	// Level 会返回日志的级别。
+	// Level returns the Level of the log.
 	Level() Level
-	// Content 会返回日志的内容。
+	// Content returns the contents of the log.
 	Content() string
-	// String 会返回本条日志的字符串形式。
+	// String returns the string form of the log.
 	String() string
 }
 
@@ -17,7 +17,7 @@ type one struct {
 	content string
 }
 
-// NewOne 会创建一个日志实例。
+// NewOne creates a One's instance.
 func NewOne(level Level, content string) One {
 	return &one{
 		level:   level,
@@ -35,5 +35,5 @@ func (o *one) Content() string {
 
 func (o *one) String() string {
 	return fmt.Sprintf("%s: %s",
-		GetlevelStr(o.level), o.content)
+		GetLevelStr(o.level), o.content)
 }

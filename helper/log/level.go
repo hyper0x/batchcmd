@@ -1,19 +1,19 @@
 package log
 
-// Level 代表日志级别。
+// Level represents the log Level.
 type Level uint8
 
-// 日志级别常量。
+// Log level constants.
 const (
-	LEVEL_DEBUG Level = 1 << iota // 调试级别。
-	LEVEL_INFO                    // 常规级别。
-	LEVEL_WARN                    // 警告级别。
-	LEVEL_ERROR                   // 错误级别。
-	LEVEL_FATAL                   // 严重级别。
+	LEVEL_DEBUG Level = 1 << iota
+	LEVEL_INFO
+	LEVEL_WARN
+	LEVEL_ERROR
+	LEVEL_FATAL
 )
 
-// GetlevelStr 用于获取日志级别的字符串形式。
-func GetlevelStr(level Level) string {
+// GetLevelStr is used to get the string form of the log level.
+func GetLevelStr(level Level) string {
 	var levelStr string
 	switch level {
 	case LEVEL_DEBUG:
