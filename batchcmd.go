@@ -177,10 +177,9 @@ func executeCommand(
 	}
 	result, err := cmd.CombinedOutput()
 	if err != nil {
-		appendLog(targetDir,
-			loghelper.LEVEL_ERROR,
+		appendLog(targetDir, loghelper.LEVEL_ERROR,
 			fmt.Sprintf("run command '%s': %s", command, err))
-		appendLog(targetDir, loghelper.LEVEL_INFO,
+		appendLog(targetDir, loghelper.LEVEL_ERROR,
 			fmt.Sprintf("prompt: \n%s", string(result)))
 		return
 	}
