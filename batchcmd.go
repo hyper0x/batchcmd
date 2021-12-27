@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log"
@@ -11,6 +12,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	loghelper "github.com/hyper0x/batchcmd/helper/log"
 )
@@ -35,7 +37,8 @@ var (
 	command    string
 	parentDirs string
 	depth      int
-	isTest     bool
+	isMock     bool
+	timeout    int64
 	verboseLog bool
 )
 
@@ -47,8 +50,10 @@ func init() {
 			"Note that multiple path needs to separated by commas ','.")
 	flag.IntVar(&depth, "d", 1,
 		"The max search depth for the target directory in parent path(s). ")
-	flag.BoolVar(&isTest, "t", false,
-		"Only test. (the command will not be executed)")
+	flag.BoolVar(&isMock, "m", false,
+		"Only mock. (the command will not be executed)")
+	flag.Int64Var(&timeout, "t", 30,
+		"The seconds for timeout of per command.")
 	flag.BoolVar(&verboseLog, "v", false,
 		"Print the verbose logs.")
 	if verboseLog {
@@ -145,7 +150,11 @@ func findAllTargetDirs(parentDirs []string, depth int, dirCh chan<- string) {
 	}()
 }
 
-func executeCommand(targetDir string, command string) {
+func executeCommand(
+	targetDir string,
+	command string,
+	ctx context.Context,
+	cancel context.CancelFunc) {
 	appendLog(targetDir, loghelper.LEVEL_DEBUG, "entry into target dir.")
 	err := os.Chdir(targetDir)
 	if err != nil {
@@ -162,26 +171,24 @@ func executeCommand(targetDir string, command string) {
 	appendLog(targetDir, loghelper.LEVEL_DEBUG,
 		fmt.Sprintf("execute command '%s'.", command))
 	if cmdLength > 1 {
-		cmd = exec.Command(realCmd, args...)
+		cmd = exec.CommandContext(ctx, realCmd, args...)
 	} else {
-		cmd = exec.Command(realCmd)
+		cmd = exec.CommandContext(ctx, realCmd)
 	}
-	result, err := cmd.Output()
+	result, err := cmd.CombinedOutput()
+	appendLog(targetDir, loghelper.LEVEL_INFO,
+		fmt.Sprintf("output: \n%s", string(result)))
 	if err != nil {
 		appendLog(targetDir,
 			loghelper.LEVEL_ERROR,
 			fmt.Sprintf("run command '%s': %s", command, err))
-		return
 	}
-	appendLog(targetDir, loghelper.LEVEL_INFO,
-		fmt.Sprintf("output: \n%s", string(result)))
-	return
 }
 
 func main() {
 	flag.Parse()
-	if isTest {
-		log.Println("Starting... (in test environment)")
+	if isMock {
+		log.Println("Starting... (in mock environment)")
 	} else {
 		log.Println("Starting... (in formal environment)")
 	}
@@ -200,14 +207,21 @@ func main() {
 		}
 		allParentDirs = []string{defaultParentDir}
 	}
-	log.Printf("Parameters: \n  Command: %s\n  Parent Dirs: %s\n  Depth: %d\n  Test: %v\n",
-		command, allParentDirs, depth, isTest)
+	paraDesc := "Parameters: " +
+		"\n  Command: %s" +
+		"\n  Parent Dirs: %s" +
+		"\n  Depth: %d" +
+		"\n  Mock: %v" +
+		"\n  Timeout(per command): %ds" +
+		"\n"
+	log.Printf(paraDesc,
+		command, allParentDirs, depth, isMock, timeout)
 	log.Println("")
 
-	dirCh := make(chan string, 50)
+	dirCh := make(chan string, 100*len(allParentDirs))
 	findAllTargetDirs(allParentDirs, depth, dirCh)
 
-	if isTest {
+	if isMock {
 		var targetDirs []string
 		for targetDir := range dirCh {
 			targetDirs = append(targetDirs, targetDir)
@@ -219,17 +233,21 @@ func main() {
 			log.Printf("  %d. %s\n", i+1, targetDir)
 		}
 		log.Println(separator)
-		log.Println("The command(s) execution has been ignored in test mode.")
+		log.Println("The command(s) execution has been ignored in mock mode.")
 		return
 	}
 
 	workFunc := func(wg *sync.WaitGroup) {
 		defer wg.Done()
+		timeoutDuration := time.Duration(timeout) * time.Second
 		for targetDir := range dirCh {
-			executeCommand(targetDir, command)
+			ctx, cancel := context.WithTimeout(
+				context.Background(), timeoutDuration)
+
+			executeCommand(targetDir, command, ctx, cancel)
 		}
 	}
-	pNum := runtime.NumCPU()
+	pNum := runtime.GOMAXPROCS(-1)
 	var wg sync.WaitGroup
 	wg.Add(pNum)
 	for i := 0; i < pNum; i++ {
