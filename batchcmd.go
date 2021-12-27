@@ -176,13 +176,16 @@ func executeCommand(
 		cmd = exec.CommandContext(ctx, realCmd)
 	}
 	result, err := cmd.CombinedOutput()
-	appendLog(targetDir, loghelper.LEVEL_INFO,
-		fmt.Sprintf("output: \n%s", string(result)))
 	if err != nil {
 		appendLog(targetDir,
 			loghelper.LEVEL_ERROR,
 			fmt.Sprintf("run command '%s': %s", command, err))
+		appendLog(targetDir, loghelper.LEVEL_INFO,
+			fmt.Sprintf("prompt: \n%s", string(result)))
+		return
 	}
+	appendLog(targetDir, loghelper.LEVEL_INFO,
+		fmt.Sprintf("output: \n%s", string(result)))
 }
 
 func main() {
