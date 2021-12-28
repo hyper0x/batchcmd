@@ -5,7 +5,7 @@ A Helper for executing system command.
 
 # Usage
 
-1. `go get github.com/hyper0x/batchcmd` .
+1. `go install github.com/hyper0x/batchcmd` .
 
 2. Run & fun:
 ```bash
